@@ -132,24 +132,25 @@ class RolloutStorage:
     def transform_qs_reward(self):
         # subtract the min value from LTL reward where the values are zero for max computation purposes
         # hardcoded a lower bound value
-        new_ltl_reward = torch.where(self.ltl_cycle_rewards == 0, torch.ones_like(self.ltl_cycle_rewards) * -1000, self.ltl_cycle_rewards)
+        new_ltl_reward = torch.where(self.ltl_cycle_rewards == 0.0, torch.ones_like(self.ltl_cycle_rewards) * -100000, self.ltl_cycle_rewards)
         return new_ltl_reward
 
     def create_cycler_trajectory(self):
         xformed_rewards = self.transform_qs_reward()
-        cycle_idxs = torch.argmax(torch.sum(xformed_rewards, dim=0), dim=-1) # should be of shape num_envs
-        ltl_rewards = self.ltl_cycle_rewards[:, torch.arange(self.num_envs), cycle_idxs].unsqueeze(-1) # should be of shape num_transitions by num_envs by 1
+        #TODO: check this. we use one index for all the data across all the environments.
+        cycle_idx = torch.argmax(torch.sum(torch.sum(xformed_rewards, dim=0), dim=0), dim=-1).item() # should be of shape num_envs
+        self.ltl_rewards = self.ltl_cycle_rewards[:, torch.arange(self.num_envs), cycle_idx].unsqueeze(-1) # should be of shape num_transitions by num_envs by 1
 
-        assert(ltl_rewards.shape == self.rewards.shape)
-        return ltl_rewards + self.rewards
+        assert(self.ltl_rewards.shape == self.rewards.shape)
+
+        return self.ltl_rewards + self.rewards
     
 
     def compute_returns(self, last_values, gamma, lam):
         advantage = 0
         if self.ltl_cycle_rewards is not None:
-            rewards = self.create_cycler_trajectory()
-        else:
-            rewards = self.rewards
+            self.rewards = self.create_cycler_trajectory()
+        rewards = self.rewards
         for step in reversed(range(self.num_transitions_per_env)):
             if step == self.num_transitions_per_env - 1:
                 next_values = last_values

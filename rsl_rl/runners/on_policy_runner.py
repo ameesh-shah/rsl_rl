@@ -53,6 +53,9 @@ class OnPolicyRunner:
         self.alg_cfg = train_cfg["algorithm"]
         if train_cfg["use_ltl"]:
             self.alg_cfg["num_ltl_cycles"] = env.max_ltl_cycle_length
+            self.use_ltl = True
+        else:
+            self.use_ltl = False
         self.policy_cfg = train_cfg["policy"]
         self.device = device
         self.env = env
@@ -130,6 +133,8 @@ class OnPolicyRunner:
                 # Learning step
                 start = stop
                 self.alg.compute_returns(critic_obs)
+                if self.use_ltl:
+                    mean_ltl_reward = self.alg.storage.ltl_rewards.mean().item()
             
             mean_value_loss, mean_surrogate_loss = self.alg.update()
             stop = time.time()
@@ -162,6 +167,7 @@ class OnPolicyRunner:
                 value = torch.mean(infotensor)
                 self.writer.add_scalar('Episode/' + key, value, locs['it'])
                 ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
+        ep_string += f"""{f'Mean Episode LTL reward:':>{pad}} {locs["mean_ltl_reward"]:.4f}\n"""
         mean_std = self.alg.actor_critic.std.mean()
         fps = int(self.num_steps_per_env * self.env.num_envs / (locs['collection_time'] + locs['learn_time']))
 
@@ -177,6 +183,8 @@ class OnPolicyRunner:
             self.writer.add_scalar('Train/mean_episode_length', statistics.mean(locs['lenbuffer']), locs['it'])
             self.writer.add_scalar('Train/mean_reward/time', statistics.mean(locs['rewbuffer']), self.tot_time)
             self.writer.add_scalar('Train/mean_episode_length/time', statistics.mean(locs['lenbuffer']), self.tot_time)
+            if self.use_ltl:
+                self.writer.add_scalar('Train/mean_ltl_reward', locs['mean_ltl_reward'], locs['it'])
 
         str = f" \033[1m Learning iteration {locs['it']}/{self.current_learning_iteration + locs['num_learning_iterations']} \033[0m "
 
