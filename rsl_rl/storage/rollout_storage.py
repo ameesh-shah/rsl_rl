@@ -139,10 +139,8 @@ class RolloutStorage:
         xformed_rewards = self.transform_qs_reward()
         #TODO: check this. we use one index for all the data across all the environments.
         cycle_idx = torch.argmax(torch.sum(torch.sum(xformed_rewards, dim=0), dim=0), dim=-1).item() # should be of shape num_envs
-        self.ltl_rewards = self.ltl_cycle_rewards[:, torch.arange(self.num_envs), cycle_idx].unsqueeze(-1) # should be of shape num_transitions by num_envs by 1
-
+        self.ltl_rewards = self.ltl_cycle_rewards[:, :, cycle_idx].unsqueeze(-1) # should be of shape num_transitions by num_envs by 1
         assert(self.ltl_rewards.shape == self.rewards.shape)
-
         return self.ltl_rewards + self.rewards
     
 

@@ -51,9 +51,10 @@ class OnPolicyRunner:
 
         self.cfg=train_cfg["runner"]
         self.alg_cfg = train_cfg["algorithm"]
-        if train_cfg["use_ltl"]:
-            self.alg_cfg["num_ltl_cycles"] = env.max_ltl_cycle_length
-            self.use_ltl = True
+        if "use_ltl" in self.alg_cfg:
+            if self.alg_cfg["use_ltl"]:
+                self.alg_cfg["num_ltl_cycles"] = env.max_ltl_cycle_length
+                self.use_ltl = True
         else:
             self.use_ltl = False
         self.policy_cfg = train_cfg["policy"]
@@ -102,7 +103,7 @@ class OnPolicyRunner:
         lenbuffer = deque(maxlen=100)
         cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
-
+        num_acc_visits = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
@@ -126,6 +127,14 @@ class OnPolicyRunner:
                         lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
                         cur_reward_sum[new_ids] = 0
                         cur_episode_length[new_ids] = 0
+                        if self.use_ltl:
+                            num_acc_visits += infos['accepting_visits']
+                            # if torch.any(infos['accepting_visits']):
+                            #     import pdb; pdb.set_trace()
+                            num_acc_visits *= 1 - dones.float()
+                            avg_num_acc_visits = num_acc_visits.sum().item() / self.env.num_envs
+                            # if num_acc_visits.sum().item() > 0:
+                            #     import pdb; pdb.set_trace()
 
                 stop = time.time()
                 collection_time = stop - start
@@ -135,7 +144,6 @@ class OnPolicyRunner:
                 self.alg.compute_returns(critic_obs)
                 if self.use_ltl:
                     mean_ltl_reward = self.alg.storage.ltl_rewards.mean().item()
-            
             mean_value_loss, mean_surrogate_loss = self.alg.update()
             stop = time.time()
             learn_time = stop - start
@@ -167,7 +175,8 @@ class OnPolicyRunner:
                 value = torch.mean(infotensor)
                 self.writer.add_scalar('Episode/' + key, value, locs['it'])
                 ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
-        ep_string += f"""{f'Mean Episode LTL reward:':>{pad}} {locs["mean_ltl_reward"]:.4f}\n"""
+        if self.use_ltl:
+            ep_string += f"""{f'LTL Accepting Visits:':>{pad}} {locs["avg_num_acc_visits"]:.4f}\n"""
         mean_std = self.alg.actor_critic.std.mean()
         fps = int(self.num_steps_per_env * self.env.num_envs / (locs['collection_time'] + locs['learn_time']))
 
@@ -185,6 +194,12 @@ class OnPolicyRunner:
             self.writer.add_scalar('Train/mean_episode_length/time', statistics.mean(locs['lenbuffer']), self.tot_time)
             if self.use_ltl:
                 self.writer.add_scalar('Train/mean_ltl_reward', locs['mean_ltl_reward'], locs['it'])
+                self.writer.add_scalar('Train/accepting_visits', locs['avg_num_acc_visits'], locs['it'])
+            #     if locs['avg_num_acc_visits'] > 0:
+            #         import pdb; pdb.set_trace()
+            # else:
+            #     import pdb; pdb.set_trace()
+
 
         str = f" \033[1m Learning iteration {locs['it']}/{self.current_learning_iteration + locs['num_learning_iterations']} \033[0m "
 

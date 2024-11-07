@@ -52,6 +52,7 @@ class PPO:
                  schedule="fixed",
                  desired_kl=0.01,
                  device='cpu',
+                 use_ltl=False,
                  num_ltl_cycles=None,
                  ):
 
@@ -107,7 +108,8 @@ class PPO:
     
     def process_env_step(self, rewards, dones, infos):
         self.transition.rewards = rewards.clone()
-        self.transition.ltl_cycle_rewards = infos['ltl_cycle_rewards']
+        if self.num_ltl_cycles is not None:
+            self.transition.ltl_cycle_rewards = infos['ltl_cycle_rewards']
         self.transition.dones = dones
         # Bootstrapping on time outs
         if 'time_outs' in infos:
